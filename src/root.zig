@@ -1,4 +1,5 @@
 const std = @import("std");
+const options = @import("options");
 
 /// Shannon entropy <https://rosettacode.org/wiki/Entropy>
 pub fn entropy(s: []const u8) f64 {
