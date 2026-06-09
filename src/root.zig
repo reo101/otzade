@@ -16,25 +16,58 @@ pub fn entropy(s: []const u8) f64 {
     return h;
 }
 
-pub const LeaIterator = struct {
+pub const LoadIterator = struct {
     buf: []const u8,
     idx: usize = 0,
 
     const Self = @This();
 
-    pub fn next(self: *Self) ?usize {
-        return while (std.mem.findScalarPos(u8, self.buf, self.idx, 0x8d)) |m| {
-            const w = self.buf[m..];
+    const Params = switch (options.arch) {
+        .x86, .x86_64 => struct {
+            pub const hint: []const u8 = &.{0x8d};
+            pub const offsets: [2]u8 = .{ 0, 6 };
+            pub const window_size = offsets[0] + offsets[1];
+            pub inline fn check(w: *const [window_size]u8) bool {
+                return w[1] & 0b11_000_111 == 0b00_000_101;
+            }
+            pub inline fn result(idx: usize, w: *const [window_size]u8) usize {
+                const imm = std.mem.readInt(i32, w[2..6], .little);
+                return idx +% @as(usize, @bitCast(@as(isize, imm)));
+            }
+        },
+        // .aarch64 => struct {
+        //     pub const hint: []const u8 = &.{0xb0};
+        //     pub const offsets: [2]u8 = .{ 3, 5 };
+        //     pub const window_size = offsets[0] + offsets[1];
+        //     pub inline fn check(w: *const [window_size]u8) bool {
+        //         return w[7] == 0x91;
+        //     }
+        //     pub inline fn result(idx: usize, w: *const [window_size]u8) usize {
+        //         const page = blk: {
+        //             const page = idx & ~@as(usize, 0xfff);
+        //             const imm = std.mem.readInt(i16, w[1..3], .little) << 12;
+        //             break :blk page +% @as(usize, @bitCast(@as(isize, imm)));
+        //         };
+        //
+        //         const imm = std.mem.readInt(u16, w[5..7], .little);
+        //         return page + imm;
+        //     }
+        // },
+        else => @compileError("Unsupported arch"),
+    };
 
-            if (w[1] & 0b11_000_111 != 0b00_000_101) {
+    pub fn next(self: *Self) ?usize {
+        return while (std.mem.findPos(u8, self.buf, self.idx, Params.hint)) |m| {
+            const w: *const [Params.window_size]u8 = @ptrCast(self.buf[m - Params.offsets[0] .. m + Params.offsets[1]]);
+
+            if (!Params.check(w)) {
                 self.idx = m + 1;
                 continue;
             } else {
-                self.idx = m + 6;
+                self.idx = m + Params.offsets[1];
             }
 
-            const imm = std.mem.readInt(i32, w[2..6], .little);
-            break self.idx +% @as(usize, @bitCast(@as(isize, imm)));
+            break Params.result(self.idx, w);
         } else null;
     }
 };

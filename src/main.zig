@@ -8,17 +8,14 @@ const Rsa = struct {
 };
 
 fn findRsa(buf: []const u8) Rsa {
+    var iter: otzade.LoadIterator = .{ .buf = buf };
     const s_xref = blk: {
         const s_address = std.mem.find(u8, buf, options.needle).?;
-        var iter: otzade.LeaIterator = .{ .buf = buf };
         while (iter.next()) |ea| if (ea == s_address) break :blk iter.idx;
         unreachable;
     };
 
-    var iter: otzade.LeaIterator = .{
-        .buf = buf,
-        .idx = std.mem.findScalarLast(u8, buf[0..@intCast(s_xref)], 0xc3).?,
-    };
+    iter.idx = std.mem.findScalarLast(u8, buf[0..@intCast(s_xref)], 0xc3).?;
 
     while (iter.next()) |ea| {
         const target = buf[ea..][0..128];
