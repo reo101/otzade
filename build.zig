@@ -4,21 +4,41 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("otzade", .{
+    const needle = b.option([]const u8, "needle", "Needle string") orelse "hunter2";
+
+    const Arch = enum {
+        x86_64,
+        aarch64,
+    };
+    const arch = b.option(Arch, "arch", "Architecture of the target files") orelse .x86_64;
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "needle", needle);
+    options.addOption(Arch, "arch", arch);
+
+    const options_mod = options.createModule();
+
+    const lib_mod = b.addModule("otzade", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
+        .imports = &.{
+            .{ .name = "options", .module = options_mod },
+        }
+    });
+
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "otzade", .module = lib_mod },
+            .{ .name = "options", .module = options_mod },
+        },
     });
 
     const exe = b.addExecutable(.{
         .name = "otzade",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "otzade", .module = mod },
-            },
-        }),
+        .root_module = exe_mod,
     });
 
     b.installArtifact(exe);
@@ -35,7 +55,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const mod_tests = b.addTest(.{
-        .root_module = mod,
+        .root_module = lib_mod,
     });
 
     const run_mod_tests = b.addRunArtifact(mod_tests);

@@ -1,5 +1,6 @@
 const std = @import("std");
 const otzade = @import("otzade");
+const options = @import("options");
 
 const Rsa = struct {
     n: u1024,
@@ -8,7 +9,7 @@ const Rsa = struct {
 
 fn findRsa(buf: []const u8) Rsa {
     const s_xref = blk: {
-        const s_address = std.mem.find(u8, buf, "hunter2").?;
+        const s_address = std.mem.find(u8, buf, options.needle).?;
         var iter: otzade.LeaIterator = .{ .buf = buf };
         while (iter.next()) |ea| if (ea == s_address) break :blk iter.idx;
         unreachable;
