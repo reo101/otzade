@@ -6,15 +6,11 @@ pub fn build(b: *std.Build) void {
 
     const needle = b.option([]const u8, "needle", "Needle string") orelse "hunter2";
 
-    const Arch = enum {
-        x86_64,
-        aarch64,
-    };
-    const arch = b.option(Arch, "arch", "Architecture of the target files") orelse .x86_64;
+    const arch = b.option(std.Target.Cpu.Arch, "arch", "Architecture of the target files") orelse .x86_64;
 
     const options = b.addOptions();
     options.addOption([]const u8, "needle", needle);
-    options.addOption(Arch, "arch", arch);
+    options.addOption(std.Target.Cpu.Arch, "arch", arch);
 
     const options_mod = options.createModule();
 
