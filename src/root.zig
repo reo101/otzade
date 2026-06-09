@@ -1,0 +1,213 @@
+const std = @import("std");
+
+/// Shannon entropy <https://rosettacode.org/wiki/Entropy>
+pub fn entropy(s: []const u8) f64 {
+    var counts: [256]u16 = @splat(0);
+    for (s) |ch| counts[ch] += 1;
+
+    var h: f64 = 0;
+    for (counts) |c|
+        if (c != 0) {
+            const p = @as(f64, c) / @as(f64, @floatFromInt(s.len));
+            h -= p * std.math.log2(p);
+        };
+
+    return h;
+}
+
+pub const LeaIterator = struct {
+    buf: []const u8,
+    idx: usize = 0,
+
+    const Self = @This();
+
+    pub fn next(self: *Self) ?usize {
+        return while (std.mem.findScalarPos(u8, self.buf, self.idx, 0x8d)) |m| {
+            const w = self.buf[m..];
+
+            if (w[1] & 0b11_000_111 != 0b00_000_101) {
+                self.idx = m + 1;
+                continue;
+            } else {
+                self.idx = m + 6;
+            }
+
+            const imm = std.mem.readInt(i32, w[2..6], .little);
+            break self.idx +% @as(usize, @bitCast(@as(isize, imm)));
+        } else null;
+    }
+};
+
+/// Montgomery modular multiplication <10.1090/S0025-5718-1985-0777282-X>
+fn Montgomery(comptime N: usize) type {
+    const T = @Int(.unsigned, N);
+    const T2 = @Int(.unsigned, 2 * N);
+
+    return struct {
+        mod: T,
+        n_prime: T,
+        r2: T,
+
+        m_1: T,
+        m_predMod: T,
+
+        const Self = @This();
+
+        pub fn init(mod: T) Self {
+            var x: T = 1;
+            for (0..std.math.log2(N)) |_| x = x *% (2 -% mod *% x);
+            const n_prime = 0 -% x;
+
+            var r: T = 1;
+            for (0..2 * N) |_| {
+                const hi: bool = r >> (N - 1) != 0;
+                r <<= 1;
+                if (hi or r >= mod) r -%= mod;
+            }
+
+            var self: Self = .{
+                .mod = mod,
+                .n_prime = n_prime,
+                .r2 = r,
+                .m_1 = undefined,
+                .m_predMod = undefined,
+            };
+
+            self.m_1 = self.lift(1);
+            self.m_predMod = self.lift(mod - 1);
+
+            return self;
+        }
+
+        pub fn mul(self: *Self, a: T, b: T) T {
+            const t: T2 = @as(T2, a) * b;
+            const u: T = @as(T, @truncate(t)) *% self.n_prime;
+            const sum, const carry = @addWithOverflow(t, @as(T2, u) * self.mod);
+            var r: T = @truncate(sum >> N);
+            if (carry != 0 or r >= self.mod) r -%= self.mod;
+            return r;
+        }
+
+        pub fn lift(self: *Self, a: T) T {
+            return self.mul(a, self.r2);
+        }
+
+        pub fn lower(self: *Self, a: T) T {
+            return self.mul(a, 1);
+        }
+
+        pub fn modExp(self: *Self, base: T, exp: T) T {
+            var res = self.m_1;
+            var b = self.lift(base);
+            var e = exp;
+            while (e > 0) : (e >>= 1) {
+                if (e & 1 != 0) res = self.mul(res, b);
+                b = self.mul(b, b);
+            }
+            return res;
+        }
+    };
+}
+
+/// Miller-Rabin primality test <https://rosettacode.org/wiki/Miller-Rabin_primality_test>
+fn isPrime(n: u1024) bool {
+    if (n <= 1) return false;
+    if (n <= 3) return true;
+    if (n & 1 == 0) return false;
+
+    var d = n - 1;
+    var s: u32 = 0;
+    while (d & 1 == 0) : (d >>= 1) s += 1;
+
+    var mont: Montgomery(1024) = .init(n);
+
+    const bases = [_]u1024{ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
+    for (bases) |base| {
+        if (n <= base) break;
+
+        var x = mont.modExp(base, d);
+        if (x == mont.m_1 or x == mont.m_predMod) continue;
+
+        var r: u32 = 1;
+        while (r < s) : (r += 1) {
+            x = mont.mul(x, x);
+            if (x == mont.m_predMod) break;
+        } else return false;
+    }
+
+    return true;
+}
+
+/// Gosper's hack <https://rosettacode.org/wiki/Gosper's_hack>
+fn BitmaskIterator(n: usize) type {
+    const T = @Int(.unsigned, n);
+
+    return struct {
+        mask: T,
+
+        const Self = @This();
+
+        fn withBits(bits: std.math.Log2Int(T)) Self {
+            return .{ .mask = (@as(T, 1) << bits) - 1 };
+        }
+
+        fn next(self: *Self) ?T {
+            if (self.mask == 0) return null;
+            const mask = self.mask;
+
+            const c = self.mask & (0 -% self.mask);
+            const r = self.mask +% c;
+            self.mask = (((r ^ self.mask) >> 2) / c) | r;
+
+            return mask;
+        }
+    };
+}
+
+pub fn findNearestPrime(target: u1024) u1024 {
+    if (isPrime(target)) return target;
+
+    var iter: BitmaskIterator(1024) = undefined;
+    return blk: for (1..1024) |d| {
+        iter = .withBits(@intCast(d));
+        while (iter.next()) |mask| {
+            const candidate = (target | 1) ^ (mask << 1);
+            if (isPrime(candidate)) break :blk candidate;
+        }
+    } else unreachable;
+}
+
+pub fn modInv(a: u1024, module: u1024) u1024 {
+    var mn_0 = module;
+    var mn_1 = a;
+    var xy_0: i2048 = 0;
+    var xy_1: i2048 = 1;
+
+    while (mn_1 != 0) {
+        const xy_0_temp = xy_1;
+        xy_1 = xy_0 - @divFloor(mn_0, mn_1) * xy_1;
+        xy_0 = xy_0_temp;
+
+        const mn_0_temp = mn_1;
+        mn_1 = @rem(mn_0, mn_1);
+        mn_0 = mn_0_temp;
+    }
+
+    while (xy_0 < 0) {
+        xy_0 += module;
+    }
+
+    return @intCast(xy_0);
+}
+
+pub fn modExp(base: u1024, exp: u1024, mod: u1024) u1024 {
+    const m: u1024 = mod;
+    var r: u2048 = 1;
+    var b: u2048 = base % m;
+    var e: u1024 = exp;
+    while (e > 0) : (e >>= 1) {
+        if (e & 1 != 0) r = (r * b) % m;
+        b = (b * b) % m;
+    }
+    return @intCast(r);
+}
