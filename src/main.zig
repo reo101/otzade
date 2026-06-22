@@ -88,14 +88,27 @@ pub fn main(init: std.process.Init) !void {
         break :blk findRsa(mmap.memory);
     };
 
+    // NOTE: read 256 bytes for a hex-encoded string,
+    //       or 128 for raw bytes, both little-endian
+    const payload = blk: {
+        var reader = std.Io.File.stdin().reader(init.io, &.{});
+
+        var input: [256 + 1]u8 = undefined;
+        const len = try reader.interface.readSliceShort(&input);
+
+        break :blk std.mem.readInt(u1024, switch (len) {
+            256 => hex: {
+                // HACK: relies on the fact that `hexToBytes` works left-to-right
+                _ = std.fmt.hexToBytes(input[0..128], input[0..256]) catch unreachable;
+                break :hex input[0..128];
+            },
+            128 => input[0..128],
+            else => return error.InvalidSize,
+        }, .big);
+    };
+
     const prime = otzade.findNearestPrime(rsa.n);
     const d = otzade.modInv(rsa.e, prime - 1);
-
-    const payload = blk: {
-        var buf: [128]u8 = undefined;
-        var reader = std.Io.File.stdin().reader(init.io, &buf);
-        break :blk try reader.interface.takeInt(u1024, .little);
-    };
 
     const signature = otzade.modExp(payload, d, prime);
 
