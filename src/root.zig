@@ -235,12 +235,13 @@ pub fn modInv(a: u1024, module: u1024) u1024 {
 }
 
 pub fn modExp(base: u1024, exp: u1024, mod: u1024) u1024 {
-    var res: u1024 = 1;
-    var b = base;
+    var r: u2048 = 1;
+    var b: u2048 = base;
     var e = exp;
+    const m: u2048 = mod;
     while (e > 0) : (e >>= 1) {
-        if (e & 1 != 0) res = (res * b) % mod;
-        b = (b * b) % mod;
+        if (e & 1 != 0) r = (r * b) % m;
+        b = (b * b) % m;
     }
-    return res;
+    return @intCast(r);
 }
