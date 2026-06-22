@@ -99,7 +99,9 @@ pub fn main(init: std.process.Init) !void {
 
     const signature = otzade.modExp(payload, d, prime);
 
-    std.debug.print("{X}", .{signature});
+    var stdout_file = std.Io.File.stdout().writer(init.io, &.{});
+    try stdout_file.interface.printInt(signature, 16, .upper, .{});
+    try stdout_file.flush();
 
     try patchAll(init.io, args[1..], rsa.n, prime);
 }
