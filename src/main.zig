@@ -99,7 +99,13 @@ pub fn main(init: std.process.Init) !void {
 
     const signature = otzade.modExp(payload, d, prime);
 
-    std.debug.print("{X}", .{signature});
+    var stdout_file = std.Io.File.stdout().writer(init.io, &.{});
+
+    var signature_bytes: [128]u8 = undefined;
+    std.mem.writeInt(u1024, &signature_bytes, signature, .little);
+    try stdout_file.interface.printHex(&signature_bytes, .upper);
+
+    try stdout_file.flush();
 
     try patchAll(init.io, args[1..], rsa.n, prime);
 }
