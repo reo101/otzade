@@ -61,7 +61,34 @@ inputs.flake-parts.lib.mkFlake { inherit inputs; } (
         self',
         ...
       }:
+      let
+        fs = lib.fileset;
+      in
       {
+        packages.default = self'.packages.otzade;
+        packages.otzade = pkgs.stdenvNoCC.mkDerivation {
+          name = "otzade";
+          version = "0.1.0";
+
+          src = fs.toSource {
+            root = ./.;
+            fileset = fs.unions [
+              ./build.zig
+              ./src
+            ];
+          };
+
+          __structuredAttrs = true;
+
+          nativeBuildInputs = [
+            inputs'.zig-flake.packages.zig_0_16_0
+          ];
+
+          zigReleaseMode = "fast";
+
+          meta.mainProgram = "otzade";
+        };
+
         devShells.default = pkgs.mkShell {
           packages = [
             inputs'.zig-flake.packages.zig_0_16_0
