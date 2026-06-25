@@ -35,24 +35,42 @@ pub const LoadIterator = struct {
                 return idx +% @as(usize, @bitCast(@as(isize, imm)));
             }
         },
-        // .aarch64 => struct {
-        //     pub const hint: []const u8 = &.{0xb0};
-        //     pub const offsets: [2]u8 = .{ 3, 5 };
-        //     pub const window_size = offsets[0] + offsets[1];
-        //     pub inline fn check(w: *const [window_size]u8) bool {
-        //         return w[7] == 0x91;
-        //     }
-        //     pub inline fn result(idx: usize, w: *const [window_size]u8) usize {
-        //         const page = blk: {
-        //             const page = idx & ~@as(usize, 0xfff);
-        //             const imm = std.mem.readInt(i16, w[1..3], .little) << 12;
-        //             break :blk page +% @as(usize, @bitCast(@as(isize, imm)));
-        //         };
-        //
-        //         const imm = std.mem.readInt(u16, w[5..7], .little);
-        //         return page + imm;
-        //     }
-        // },
+        .aarch64 => struct {
+            pub const hint: []const u8 = &.{0x91};
+            pub const offsets: [2]u8 = .{ 7, 1 };
+            pub const window_size = offsets[0] + offsets[1];
+            pub inline fn check(w: *const [window_size]u8) bool {
+                if (w[3] & 0x9F != 0x90) return false;
+                if (w[6] & 0xC0 != 0x00) return false;
+                const adrp_rd = w[0] & 0x1F;
+                const add_rn = (w[4] >> 5) | (@as(u8, w[5] & 0x03) << 3);
+                return adrp_rd == add_rn;
+            }
+
+            pub inline fn result(idx: usize, w: *const [window_size]u8) usize {
+                const pc = idx - 8;
+
+                const immlo = (w[3] >> 5) & 0x03;
+                const immhi_0_2 = @as(u32, w[0] >> 5) << 2;
+                const immhi_3_10 = @as(u32, w[1]) << 5;
+                const immhi_11_18 = @as(u32, w[2]) << 13;
+                const imm21_u = @as(u32, immlo) | immhi_0_2 | immhi_3_10 | immhi_11_18;
+
+                const imm_i32 = @as(i32, @bitCast(imm21_u << 11)) >> 11;
+                const adrp_offset = @as(isize, imm_i32) * 4096;
+
+                const base = (pc & ~@as(usize, 0xFFF)) +% @as(usize, @bitCast(adrp_offset));
+
+                const add_offset = (@as(usize, w[5]) >> 2) | (@as(usize, w[6] & 0x3F) << 6);
+
+                // HACK: parsing the ELF header lets us calculate the virtual offset
+                //       hardcode the commonly used value 0x10000 for now
+
+                // LOAD off    0x0000000000ac49e8 vaddr 0x0000000000ad49e8 ... align 2**16
+
+                return base + add_offset + 0x10000;
+            }
+        },
         else => @compileError("Unsupported arch"),
     };
 

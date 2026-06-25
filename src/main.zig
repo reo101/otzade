@@ -15,7 +15,11 @@ fn findRsa(buf: []const u8) Rsa {
         unreachable;
     };
 
-    iter.idx = std.mem.findScalarLast(u8, buf[0..@intCast(s_xref)], 0xc3).?;
+    iter.idx = switch (options.arch) {
+        .x86, .x86_64 => std.mem.findScalarLast(u8, buf[0..@intCast(s_xref)], 0xc3).?,
+        .aarch64 => std.mem.findLast(u8, buf[0..@intCast(s_xref)], &.{ 0xc0, 0x03, 0x5f, 0xd6 }).?,
+        else => @compileError("Unsupported arch"),
+    };
 
     while (iter.next()) |ea| {
         const target = buf[ea..][0..128];
