@@ -23,6 +23,14 @@ fn findRsa(buf: []const u8) Rsa {
 
     while (iter.next()) |ea| {
         const target = buf[ea..][0..128];
+
+        if (otzade.entropy(target) < 0.1) {
+            return .{
+                .n = std.mem.readInt(u1024, buf[iter.next().?..][0..128], .little),
+                .e = buf[ea],
+            };
+        }
+
         if (otzade.entropy(target) > 6) {
             return .{
                 .n = std.mem.readInt(u1024, target, .little),
