@@ -86,6 +86,35 @@ inputs.flake-parts.lib.mkFlake { inherit inputs; } (
 
           zigReleaseMode = "fast";
 
+          setupHook = pkgs.writeShellScript "otzade-setup-hook.sh" ''
+            otzadeSign() {
+              local filesDecl
+              filesDecl=$(declare -p otzadeFiles 2>/dev/null || true)
+
+              if [[ -z "''${otzadeMessage+x}" && -z "$filesDecl" ]]; then
+                return 0
+              fi
+
+              if [[ -z "''${otzadeMessage+x}" || -z "$filesDecl" ]]; then
+                echo 1>&2 'otzade hook: set both otzadeMessage and otzadeFiles'
+                return 1
+              fi
+
+              if [[ "$filesDecl" =~ ^'declare -a otzadeFiles=' ]]; then
+                local -a files=("''${otzadeFiles[@]}")
+              else
+                local -a files
+                # NOTE: `otzadeFiles` is trusted build input
+                eval "files=($otzadeFiles)"
+              fi
+
+              otzadeSignature=$(printf '%s' "$otzadeMessage" | otzade "''${files[@]}")
+              export otzadeSignature
+            }
+
+            preFixupPhases+=(otzadeSign)
+          '';
+
           meta.mainProgram = "otzade";
         };
 
